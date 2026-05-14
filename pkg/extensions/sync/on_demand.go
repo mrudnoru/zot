@@ -101,11 +101,21 @@ func (onDemand *BaseOnDemand) SyncBlobOnDemand(ctx context.Context, repo string,
 		return reader, size, false, nil, err
 	}
 
-	onDemand.blobInflightMu.Lock()
+	inf, isFirstClient := func() (*blobInflight, bool) {
+		onDemand.blobInflightMu.Lock()
+		defer onDemand.blobInflightMu.Unlock()
 
-	if inf, exists := onDemand.blobInflight[key]; exists {
-		onDemand.blobInflightMu.Unlock()
+		if inf, exists := onDemand.blobInflight[key]; exists {
+			return inf, false
+		}
 
+		inf := &blobInflight{done: make(chan struct{}), ready: make(chan struct{})}
+		onDemand.blobInflight[key] = inf
+
+		return inf, true
+	}()
+
+	if !isFirstClient {
 		onDemand.log.Info().Str("repo", repo).Str("digest", digest.String()).
 			Msg("blob already being downloaded, waiting on channel")
 
@@ -122,10 +132,6 @@ func (onDemand *BaseOnDemand) SyncBlobOnDemand(ctx context.Context, repo string,
 	}
 
 	// First client: register inflight and fetch from upstream
-	inf := &blobInflight{done: make(chan struct{}), ready: make(chan struct{})}
-	onDemand.blobInflight[key] = inf
-	onDemand.blobInflightMu.Unlock()
-
 	var upstreamReader io.ReadCloser
 
 	var size int64
