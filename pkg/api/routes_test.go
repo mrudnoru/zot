@@ -2367,6 +2367,7 @@ func TestGetBlobStreamOnDemandWaiterFromCache(t *testing.T) {
 	layerDigest := godigest.FromString("stream-waiter")
 
 	waitCh := make(chan struct{})
+
 	go func() {
 		time.Sleep(25 * time.Millisecond)
 		close(waitCh)
