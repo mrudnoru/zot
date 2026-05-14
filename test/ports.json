@@ -460,5 +460,15 @@
       "begin": 11530,
       "end": 11539
     }
+  },
+  "blackbox/sync_stream_on_demand.bats": {
+    "zot1": {
+      "begin": 11540,
+      "end": 11549
+    },
+    "zot2": {
+      "begin": 11550,
+      "end": 11559
+    }
   }
 }
