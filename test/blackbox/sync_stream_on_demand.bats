@@ -43,10 +43,10 @@ function setup_file() {
     mkdir -p ${zot_stream_root_dir}
     mkdir -p ${zot_upstream_root_dir}
 
-    zot_port1=$(get_free_port_for_service "zot1")
-    echo ${zot_port1} > ${BATS_FILE_TMPDIR}/zot.port1
-    zot_port2=$(get_free_port_for_service "zot2")
-    echo ${zot_port2} > ${BATS_FILE_TMPDIR}/zot.port2
+    zot_port=$(get_free_port_for_service "zot")
+    echo ${zot_port} > ${BATS_FILE_TMPDIR}/zot.port
+    zot_upstream_port=$(get_free_port_for_service "zot_upstream")
+    echo ${zot_upstream_port} > ${BATS_FILE_TMPDIR}/zot.port_upstream
 
     # Downstream zot: onDemand + stream enabled, syncing from upstream
     cat >${zot_stream_config_file} <<EOF
@@ -57,7 +57,7 @@ function setup_file() {
     },
     "http": {
         "address": "0.0.0.0",
-        "port": "${zot_port1}"
+        "port": "${zot_port}"
     },
     "log": {
         "level": "debug"
@@ -67,7 +67,7 @@ function setup_file() {
             "registries": [
                 {
                     "urls": [
-                        "http://localhost:${zot_port2}"
+                        "http://localhost:${zot_upstream_port}"
                     ],
                     "onDemand": true,
                     "stream": true,
@@ -93,7 +93,7 @@ EOF
     },
     "http": {
         "address": "0.0.0.0",
-        "port": "${zot_port2}"
+        "port": "${zot_upstream_port}"
     },
     "log": {
         "level": "debug"
@@ -102,10 +102,10 @@ EOF
 EOF
 
     zot_serve ${ZOT_MINIMAL_PATH} ${zot_upstream_config_file}
-    wait_zot_reachable ${zot_port2}
+    wait_zot_reachable ${zot_upstream_port}
 
     zot_serve ${ZOT_PATH} ${zot_stream_config_file}
-    wait_zot_reachable ${zot_port1}
+    wait_zot_reachable ${zot_port}
 }
 
 function teardown_file() {
@@ -113,22 +113,22 @@ function teardown_file() {
 }
 
 @test "stream on-demand pulls image manifest from upstream" {
-    zot_port1=`cat ${BATS_FILE_TMPDIR}/zot.port1`
-    zot_port2=`cat ${BATS_FILE_TMPDIR}/zot.port2`
+    zot_port=`cat ${BATS_FILE_TMPDIR}/zot.port`
+    zot_upstream_port=`cat ${BATS_FILE_TMPDIR}/zot.port_upstream`
 
     # Push the source image to the upstream registry
     run skopeo --insecure-policy copy --dest-tls-verify=false \
         oci:${TEST_DATA_DIR}/golang:1.20 \
-        docker://127.0.0.1:${zot_port2}/golang:1.20
+        docker://127.0.0.1:${zot_upstream_port}/golang:1.20
     [ "$status" -eq 0 ]
 
     # Upstream now lists golang
-    run curl http://127.0.0.1:${zot_port2}/v2/_catalog
+    run curl http://127.0.0.1:${zot_upstream_port}/v2/_catalog
     [ "$status" -eq 0 ]
     [ $(echo "${lines[-1]}" | jq '.repositories[]') = '"golang"' ]
 
     # Downstream initially has no repos
-    run curl http://127.0.0.1:${zot_port1}/v2/_catalog
+    run curl http://127.0.0.1:${zot_port}/v2/_catalog
     [ "$status" -eq 0 ]
     [ $(echo "${lines[-1]}" | jq '.repositories | length') -eq 0 ]
 
@@ -136,23 +136,22 @@ function teardown_file() {
     run curl -fsS -o /dev/null -w "%{http_code}" \
         -H "Accept: application/vnd.oci.image.manifest.v1+json" \
         -H "Accept: application/vnd.oci.image.index.v1+json" \
-        http://127.0.0.1:${zot_port1}/v2/golang/manifests/1.20
+        http://127.0.0.1:${zot_port}/v2/golang/manifests/1.20
     [ "$status" -eq 0 ]
     [ "${lines[-1]}" = "200" ]
 
     # Downstream now lists golang (the on-demand sync populated the repo)
-    run curl http://127.0.0.1:${zot_port1}/v2/_catalog
+    run curl http://127.0.0.1:${zot_port}/v2/_catalog
     [ "$status" -eq 0 ]
     [ $(echo "${lines[-1]}" | jq '.repositories[]') = '"golang"' ]
 
-    run curl http://127.0.0.1:${zot_port1}/v2/golang/tags/list
+    run curl http://127.0.0.1:${zot_port}/v2/golang/tags/list
     [ "$status" -eq 0 ]
     [ $(echo "${lines[-1]}" | jq '.tags[]') = '"1.20"' ]
 }
 
 @test "stream on-demand caches blobs after first pull" {
-    zot_port1=`cat ${BATS_FILE_TMPDIR}/zot.port1`
-    zot_port2=`cat ${BATS_FILE_TMPDIR}/zot.port2`
+    zot_port=`cat ${BATS_FILE_TMPDIR}/zot.port`
 
     # Fetch the manifest from the downstream to discover a blob digest.
     # The previous test already triggered the on-demand sync, so this hits the cache for the manifest.
@@ -161,7 +160,7 @@ function teardown_file() {
         -H "Accept: application/vnd.oci.image.manifest.v1+json" \
         -H "Accept: application/vnd.oci.image.index.v1+json" \
         -o ${manifest_file} \
-        http://127.0.0.1:${zot_port1}/v2/golang/manifests/1.20
+        http://127.0.0.1:${zot_port}/v2/golang/manifests/1.20
     [ "$status" -eq 0 ]
 
     # If the manifest is an image index, descend one level to a platform-specific manifest.
@@ -172,7 +171,7 @@ function teardown_file() {
         run curl -fsS \
             -H "Accept: application/vnd.oci.image.manifest.v1+json" \
             -o ${manifest_file} \
-            http://127.0.0.1:${zot_port1}/v2/golang/manifests/${child_digest}
+            http://127.0.0.1:${zot_port}/v2/golang/manifests/${child_digest}
         [ "$status" -eq 0 ]
     fi
 
@@ -185,11 +184,11 @@ function teardown_file() {
     # If streaming didn't actually cache, this fetch will fail.
     zot_stop_all
     zot_serve ${ZOT_PATH} ${BATS_FILE_TMPDIR}/zot_stream_config.json
-    wait_zot_reachable ${zot_port1}
+    wait_zot_reachable ${zot_port}
 
     # Second blob pull — upstream is dead, so success proves the blob was cached.
     run curl -fsS -o /dev/null -w "%{http_code}" \
-        http://127.0.0.1:${zot_port1}/v2/golang/blobs/${blob_digest}
+        http://127.0.0.1:${zot_port}/v2/golang/blobs/${blob_digest}
     [ "$status" -eq 0 ]
     [ "${lines[-1]}" = "200" ]
 }
