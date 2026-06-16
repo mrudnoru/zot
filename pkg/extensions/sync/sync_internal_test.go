@@ -795,7 +795,7 @@ func TestDestinationRegistry(t *testing.T) {
 		repoName := "repo"
 
 		storeController := storage.StoreController{DefaultStore: syncImgStore}
-		registry := NewDestinationRegistry(storeController, storeController, nil, log)
+		registry := NewDestinationRegistry(storeController, storeController, nil, log, nil)
 		imageReference, err := registry.GetImageReference(repoName, "1.0")
 		So(err, ShouldBeNil)
 		So(imageReference, ShouldNotBeNil)
@@ -925,7 +925,7 @@ func TestDestinationRegistry(t *testing.T) {
 			repoName := "repo"
 
 			storeController := storage.StoreController{DefaultStore: syncImgStore}
-			registry := NewDestinationRegistry(storeController, storeController, nil, log)
+			registry := NewDestinationRegistry(storeController, storeController, nil, log, nil)
 
 			err = registry.CommitAll(repoName, imageReference)
 			So(err, ShouldBeNil)
@@ -968,7 +968,7 @@ func TestDestinationRegistry(t *testing.T) {
 
 					return nil
 				},
-			}, log)
+			}, log, nil)
 
 			err = registry.CommitAll(repoName, imageReference)
 			So(err, ShouldNotBeNil)
@@ -980,7 +980,7 @@ func TestDestinationRegistry(t *testing.T) {
 				SetRepoReferenceFn: func(ctx context.Context, repo, reference string, imageMeta mTypes.ImageMeta) error {
 					return zerr.ErrRepoMetaNotFound
 				},
-			}, log)
+			}, log, nil)
 
 			err = registry.CommitAll(repoName, imageReference)
 			So(err, ShouldNotBeNil)
@@ -992,7 +992,7 @@ func TestDestinationRegistry(t *testing.T) {
 
 			// Create a destination registry using the existing syncImgStore as temp storage
 			storeController := storage.StoreController{DefaultStore: syncImgStore}
-			registry := NewDestinationRegistry(storeController, storeController, nil, log)
+			registry := NewDestinationRegistry(storeController, storeController, nil, log, nil)
 
 			// Get an image reference - this will create a temp session directory
 			imageReference, err := registry.GetImageReference(repoName, "test-index")
@@ -1193,7 +1193,7 @@ func TestDestinationRegistry(t *testing.T) {
 
 		Convey("CommitAll with non-existent directory", func() {
 			// Create a registry and get an image reference
-			registry := NewDestinationRegistry(storeController, storeController, nil, log)
+			registry := NewDestinationRegistry(storeController, storeController, nil, log, nil)
 			imageReference, err := registry.GetImageReference("nonexistent-repo", "1.0")
 			So(err, ShouldBeNil)
 
@@ -1210,7 +1210,7 @@ func TestDestinationRegistry(t *testing.T) {
 
 		Convey("CommitAll with empty directory", func() {
 			// Create a registry and get an image reference
-			registry := NewDestinationRegistry(storeController, storeController, nil, log)
+			registry := NewDestinationRegistry(storeController, storeController, nil, log, nil)
 			imageReference, err := registry.GetImageReference("empty-repo", "1.0")
 			So(err, ShouldBeNil)
 
@@ -1227,7 +1227,7 @@ func TestDestinationRegistry(t *testing.T) {
 
 		Convey("CommitAll with directory containing files but no index.json", func() {
 			// Create a registry and get an image reference
-			registry := NewDestinationRegistry(storeController, storeController, nil, log)
+			registry := NewDestinationRegistry(storeController, storeController, nil, log, nil)
 			imageReference, err := registry.GetImageReference("inconsistent-repo", "1.0")
 			So(err, ShouldBeNil)
 
@@ -1250,7 +1250,7 @@ func TestDestinationRegistry(t *testing.T) {
 
 		Convey("CommitAll with ReadDir error (non-ErrNotExist)", func() {
 			// Create a registry and get an image reference
-			registry := NewDestinationRegistry(storeController, storeController, nil, log)
+			registry := NewDestinationRegistry(storeController, storeController, nil, log, nil)
 			imageReference, err := registry.GetImageReference("error-repo", "1.0")
 			So(err, ShouldBeNil)
 

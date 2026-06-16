@@ -20,6 +20,7 @@ import (
 
 	zerr "zotregistry.dev/zot/v2/errors"
 	"zotregistry.dev/zot/v2/pkg/common"
+	syncconf "zotregistry.dev/zot/v2/pkg/extensions/config/sync"
 	"zotregistry.dev/zot/v2/pkg/extensions/monitoring"
 	"zotregistry.dev/zot/v2/pkg/log"
 	"zotregistry.dev/zot/v2/pkg/meta"
@@ -30,11 +31,61 @@ import (
 	storageTypes "zotregistry.dev/zot/v2/pkg/storage/types"
 )
 
+// parsedPlatform represents a parsed os/arch/variant selector.
+type parsedPlatform struct {
+	os      string
+	arch    string
+	variant string
+}
+
+// parsePlatformSpec parses "arch", "os/arch", or "os/arch/variant".
+func parsePlatformSpec(spec string) parsedPlatform {
+	parts := strings.Split(spec, "/")
+
+	switch len(parts) {
+	case 3: //nolint:mnd
+		return parsedPlatform{os: parts[0], arch: parts[1], variant: parts[2]}
+	case 2: //nolint:mnd
+		return parsedPlatform{os: parts[0], arch: parts[1]}
+	default:
+		return parsedPlatform{arch: spec}
+	}
+}
+
+// matchesPlatform returns true when platform matches at least one spec,
+// or when specs is empty (no filtering).
+func matchesPlatform(platform *ispec.Platform, specs []string) bool {
+	if len(specs) == 0 || platform == nil {
+		return true
+	}
+
+	for _, spec := range specs {
+		pp := parsePlatformSpec(spec)
+
+		if pp.arch != "" && pp.arch != platform.Architecture {
+			continue
+		}
+
+		if pp.os != "" && pp.os != platform.OS {
+			continue
+		}
+
+		if pp.variant != "" && platform.Variant != "" && pp.variant != platform.Variant {
+			continue
+		}
+
+		return true
+	}
+
+	return false
+}
+
 type DestinationRegistry struct {
 	storeController storage.StoreController
 	tempStorage     OciLayoutStorage
 	metaDB          mTypes.MetaDB
 	log             log.Logger
+	platforms       []string
 }
 
 func NewDestinationRegistry(
@@ -42,14 +93,19 @@ func NewDestinationRegistry(
 	tempStoreController storage.StoreController, // temp store controller
 	metaDB mTypes.MetaDB,
 	log log.Logger,
+	config *syncconf.RegistryConfig,
 ) Destination {
+	var platforms []string
+	if config != nil {
+		platforms = config.Platforms
+	}
+
 	return &DestinationRegistry{
 		storeController: storeController,
 		tempStorage:     NewOciLayoutStorage(tempStoreController),
 		metaDB:          metaDB,
-		// first we sync from remote (using containers/image copy from docker:// to oci:) to a temp imageStore
-		// then we copy the image from tempStorage to zot's storage using ImageStore APIs
-		log: log,
+		log:             log,
+		platforms:       platforms,
 	}
 }
 
@@ -254,6 +310,15 @@ func (registry *DestinationRegistry) copyManifest(repo string, desc ispec.Descri
 		var firstMissingErr error
 
 		for _, manifest := range indexManifest.Manifests {
+			if !matchesPlatform(manifest.Platform, registry.platforms) {
+				registry.log.Info().Str("repo", repo).
+					Str("digest", manifest.Digest.String()).
+					Str("platform", formatPlatform(manifest.Platform)).
+					Msg("skipping platform excluded by sync filter")
+
+				continue
+			}
+
 			reference := GetDescriptorReference(manifest)
 
 			manifestBuf, err := tempImageStore.GetBlobContent(repo, manifest.Digest)
@@ -364,4 +429,17 @@ func getImageStore(rootDir string, log log.Logger) storageTypes.ImageStore {
 	metrics := monitoring.NewMetricsServer(false, log)
 
 	return local.NewImageStore(rootDir, false, false, log, metrics, nil, nil, nil, nil)
+}
+
+func formatPlatform(p *ispec.Platform) string {
+	if p == nil {
+		return "unknown"
+	}
+
+	s := p.OS + "/" + p.Architecture
+	if p.Variant != "" {
+		s += "/" + p.Variant
+	}
+
+	return s
 }

@@ -117,7 +117,7 @@ func New(
 
 	if len(tmpDir) == 0 {
 		// first it will sync in tmpDir then it will move everything into local ImageStore
-		service.destination = NewDestinationRegistry(storeController, storeController, metadb, log)
+		service.destination = NewDestinationRegistry(storeController, storeController, metadb, log, &service.config)
 	} else {
 		// first it will sync under /rootDir/reponame/.sync/ then it will move everything into local ImageStore
 		service.destination = NewDestinationRegistry(
@@ -127,6 +127,7 @@ func New(
 			},
 			metadb,
 			log,
+			&service.config,
 		)
 	}
 
